@@ -1,0 +1,17 @@
+{
+  "name": "escrow",
+  "version": "0.0.1",
+  "description": "contracts, bro",
+  "scripts": {
+    "deploy": "truffle compile && truffle migrate --reset",
+    "compile": "solc --bin ./contracts/StandardToken.sol"
+  },
+  "main": "dist/main.js",
+  "author": "Rocky Balboa",
+  "license": "MIT",
+  "devDependencies": {
+    "babel-register": "^6.24.1",
+    "eslint": "^3.14.0",
+    "truffle-contract": "^1.1.6"
+  }
+}
