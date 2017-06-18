@@ -1,4 +1,4 @@
-var HumanStandardToken = artifacts.require("./HumanStandardToken.sol");
+/*var HumanStandardToken = artifacts.require("./HumanStandardToken.sol");
 
 contract('HumanStandardToken', function(accounts) {
 
@@ -56,6 +56,7 @@ contract('HumanStandardToken', function(accounts) {
   })
 
 })
+*/
 
 /*
 function getEthBalance (address) {

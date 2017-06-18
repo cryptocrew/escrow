@@ -24,6 +24,9 @@ contract ThresholdPool {
   // contributor to balance mapping
   mapping (address => uint256) balances;
 
+  // event occurs when thresheld is met and total is transferred to recipient
+  event RecipientTransfer(address recipient, uint256 value);
+
   function ThresholdPool (
     uint256 _poolTime,
     uint256 _threshold,
@@ -39,6 +42,7 @@ contract ThresholdPool {
   function contribute() payable {
     // revert this call if pool is closed
     require(!isClosed());
+    require(msg.value > 0);
 
     // add funds to the contributor's balance
     balances[msg.sender] += msg.value;
@@ -66,6 +70,7 @@ contract ThresholdPool {
     if (total >= threshold) {
       // if the pool threshold was met or exceeded, transfer the total
       // to the recipient
+      RecipientTransfer(recipient, total);
       recipient.transfer(total);
     }
   }

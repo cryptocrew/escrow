@@ -12,6 +12,7 @@
   "devDependencies": {
     "babel-register": "^6.24.1",
     "eslint": "^3.14.0",
+    "lodash": "^4.17.4",
     "truffle-contract": "^1.1.6"
   }
 }
