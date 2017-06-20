@@ -1,5 +1,5 @@
 const _ = require('lodash')
-const { ethTransaction } = require('./helpers')
+const { ethTransaction, ethCall } = require('./helpers')
 const ThresholdPoolMock = artifacts.require("./ThresholdPoolMock.sol");
 let accounts
 
@@ -145,9 +145,7 @@ contract('ThresholdPool', function(_accounts) {
     it('should throw if isClosed() returns false', async () => {
       return await recipientWithdrawTest({
         init,
-        recipientWithdrawCalls: [
-          { sender: recipientAccount }
-        ],
+        sender: recipientAccount,
         expectThrow: true
       })
     })
@@ -157,9 +155,7 @@ contract('ThresholdPool', function(_accounts) {
         init,
         finalTime: 150,
         preCall: { account: recipientAccount },
-        recipientWithdrawCalls: [
-          { sender: recipientAccount }
-        ],
+        sender: recipientAccount,
         expectThrow: true
       })
     })
@@ -168,9 +164,7 @@ contract('ThresholdPool', function(_accounts) {
       return await recipientWithdrawTest({
         init,
         finalTime: 150,
-        recipientWithdrawCalls: [
-          { sender: recipientAccount }
-        ],
+        sender: recipientAccount,
         expectRecipientWithdrewFundsToBeTrue: true
       })
     })
@@ -179,9 +173,7 @@ contract('ThresholdPool', function(_accounts) {
       return await recipientWithdrawTest({
         init: Object.assign({}, init, { threshold: toWei(0.1) }),
         finalTime: 150,
-        recipientWithdrawCalls: [
-          { sender: recipientAccount }
-        ],
+        sender: recipientAccount,
         expectThrow: true
       })
     })
@@ -195,9 +187,7 @@ contract('ThresholdPool', function(_accounts) {
           { sender: accounts[2], value: toWei(0.05) }
         ],
         finalTime: 150,
-        recipientWithdrawCalls: [
-          { sender: recipientAccount }
-        ],
+        sender: recipientAccount,
         expectedRecipientTransferAmt: toWei(0.15)
       })
     })
@@ -207,9 +197,7 @@ contract('ThresholdPool', function(_accounts) {
         init: Object.assign({}, init, { threshold: toWei(0.1) }),
         contributeCalls: [ { sender: accounts[0], value: toWei(0.15) } ],
         finalTime: 150,
-        recipientWithdrawCalls: [
-          { sender: accounts[1] }
-        ],
+        sender: accounts[1],
         expectThrow: true
       })
     })
@@ -263,67 +251,47 @@ contract('ThresholdPool', function(_accounts) {
 })
 
 async function recipientWithdrawTest (params) {
-  const { init, finalTime, contributeCalls,  preCall, recipientWithdrawCalls, expectThrow,
+  const { init, finalTime, contributeCalls,  preCall, sender, expectThrow,
     expectRecipientWithdrewFundsToBeTrue, expectedRecipientTransferAmt } = params
   const tp = await mockTP(init)
   await makeContributeCalls(tp, contributeCalls)
   if (typeof finalTime !== 'undefined') {
     await tp.changeTime(finalTime)
   }
-  let err
   if (preCall) {
     await tp.recipientWithdraw({ from: preCall.account })
   }
-  let calls
-  try {
-    calls = await makeRecipientWithdrawCalls(tp, recipientWithdrawCalls)
-  } catch (_err) {
-    err = _err
-  } finally {
-    handleErrorAssert(err, expectThrow)
-    if (typeof expectRecipientWithdrewFundsToBeTrue !== 'undefined') {
-      const recipientWithdrewFunds = await tp.recipientWithdrewFunds.call()
-      assert.equal(
-        recipientWithdrewFunds,
-        true,
-        `expected 'recipientWithdrewFunds' to be true but received ${recipientWithdrewFunds}`
-      )
-    }
-    if (typeof expectedRecipientTransferAmt !== 'undefined') {
-      const transferEvents = ethTransaction(calls[0]).filterEvents('RecipientTransfer')
-      const actualRecipientTransferAmt = transferEvents[0].args.value.toNumber()
-      assert.equal(
-        actualRecipientTransferAmt,
-        expectedRecipientTransferAmt,
-        `expected ${expectedRecipientTransferAmt} to be transfered to ${init.recipient}, ` +
-          `but ${actualRecipientTransferAmt} was transferred`
-      )
-    }
+  const tx = await ethTransaction(tp.recipientWithdraw({ from: sender }))
+  if (expectThrow) {
+    tx.assertThrewError()
+  }
+  if (typeof expectRecipientWithdrewFundsToBeTrue !== 'undefined') {
+    const c = await ethCall(tp.recipientWithdrewFunds.call())
+    c.assertReturnValue(true)
+  }
+  if (typeof expectedRecipientTransferAmt !== 'undefined') {
+    tx.assertLogEvent({ event: 'RecipientTransfer', value: expectedRecipientTransferAmt })
   }
 }
 
 async function contributeTest (params) {
   const { init, finalTime, contributeCalls, expectThrow, expectedSenderBalances, expectedTotal } = params
   const tp = await tpChangeTime(init, finalTime)
-  let err
-  try {
-    await makeContributeCalls(tp, contributeCalls)
-  } catch (_err) {
-    err = _err
-  } finally {
-    handleErrorAssert(err, expectThrow)
-    if (typeof expectedSenderBalances !== 'undefined') {
-      const actualBalances = await Promise.all(_.map(expectedSenderBalances, (b) => {
-        return balanceOf(tp, b.sender)
-      }))
-      _.forEach(actualBalances, (actualBalance, i) => {
-        assert.equal(actualBalance, expectedSenderBalances[i].value)
-      })
-    }
-    if (typeof expectedTotal !== 'undefined') {
-      const actualTotal = await tp.total.call()
-      assert.equal(actualTotal.toNumber(), expectedTotal)
-    }
+  const transactions = await makeContributeCalls(tp, contributeCalls)
+  if (expectThrow) {
+    transactions[0].assertThrewError()
+  }
+  if (typeof expectedSenderBalances !== 'undefined') {
+    const actualBalances = await Promise.all(_.map(expectedSenderBalances, (b) => {
+      return balanceOf(tp, b.sender)
+    }))
+    _.forEach(actualBalances, (actualBalance, i) => {
+      assert.equal(actualBalance, expectedSenderBalances[i].value)
+    })
+  }
+  if (typeof expectedTotal !== 'undefined') {
+    const c = await ethCall(tp.total.call())
+    c.assertReturnValue(expectedTotal)
   }
 }
 
@@ -334,17 +302,13 @@ async function withdrawTest (params) {
   if (typeof finalTime !== 'undefined') {
     await tp.changeTime(finalTime)
   }
-  let err, tx
-  try {
-    tx = ethTransaction(await tp.withdraw({ from: sender }))
-  } catch (_err) {
-    err = _err
-  } finally {
-    handleErrorAssert(err, expectThrow)
-    _.forEach(expectEvents, (e) => {
-      tx.assertEvent(e)
-    })
+  tx = await ethTransaction(tp.withdraw({ from: sender }))
+  if (expectThrow) {
+    tx.assertThrewError()
   }
+  _.forEach(expectEvents, (e) => {
+    tx.assertLogEvent(e)
+  })
 }
 
 async function tpChangeTime (init, finalTime) {
@@ -358,39 +322,25 @@ async function tpChangeTime (init, finalTime) {
 async function makeContributeCalls(tp, contributeCalls) {
   if (typeof contributeCalls !== 'undefined') {
     return await Promise.all(_.map(contributeCalls, (c) => {
-      return tp.contribute({ from: c.sender, value: c.value })
+      return ethTransaction(tp.contribute({ from: c.sender, value: c.value }))
     }))
   }
-}
-
-async function makeRecipientWithdrawCalls(tp, recipientWithdrawCalls) {
-  return await Promise.all(_.map(recipientWithdrawCalls, (c) => {
-    return tp.recipientWithdraw({ from: c.sender })
-  }))
 }
 
 async function isClosedTest (params) {
   const { init, finalTime, expectedReturnVal } = params
   const tp = await mockTP(init)
   await tp.changeTime(finalTime)
-  const actualReturnVal = await tp.isClosed.call()
-  assert.equal(
-    actualReturnVal,
-    expectedReturnVal,
-    `isClosed() did not return ${expectedReturnVal}`
-  )
+  const c = await ethCall(tp.isClosed.call())
+  c.assertReturnValue(expectedReturnVal)
 }
 
 async function thresholdMetTest (params) {
   const { init, contributeCalls, expectedReturnVal } = params
   const tp = await mockTP(init)
   await makeContributeCalls(tp, contributeCalls)
-  const actualReturnVal = await tp.thresholdMet.call()
-  assert.equal(
-    actualReturnVal,
-    expectedReturnVal,
-    `expected thresholdMet() to return ${expectedReturnVal} but got ${actualReturnVal}`
-  )
+  const c = await ethCall(tp.thresholdMet.call())
+  c.assertReturnValue(expectedReturnVal)
 }
 
 async function mockTP (params) {
