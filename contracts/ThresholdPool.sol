@@ -18,14 +18,17 @@ contract ThresholdPool {
   // if threshold is reached before poolTime is exceeded
   address public recipient;
 
-  // true if pool has been ended
-  bool public ended;
+  // true if recipient withdrew the pool total
+  bool public recipientWithdrewFunds;
 
   // contributor to balance mapping
   mapping (address => uint256) balances;
 
-  // event occurs when thresheld is met and total is transferred to recipient
+  // event occurs when threshold is met and total is transferred to recipient
   event RecipientTransfer(address recipient, uint256 value);
+
+  // event occurs when threshold is not met and contributor withdraws their balance
+  event ContributorWithdraw(address contributor, uint256 value);
 
   function ThresholdPool (
     uint256 _poolTime,
@@ -61,26 +64,36 @@ contract ThresholdPool {
     return currentTime() >= (startTime + poolTime);
   }
 
-  function end() {
-    require(isClosed());
-    require(!ended);
+  // returns true if enough is contributed to the pool to meet the threshold
+  function thresholdMet() returns (bool) {
+    return total >= threshold;
+  }
 
-    ended = true;
+  function recipientWithdraw() {
+    require(isClosed());
+    require(!recipientWithdrewFunds);
+    require(msg.sender == recipient);
     
-    if (total >= threshold) {
+    if (thresholdMet()) {
       // if the pool threshold was met or exceeded, transfer the total
       // to the recipient
+      recipientWithdrewFunds = true;
       RecipientTransfer(recipient, total);
       recipient.transfer(total);
+    } else {
+      throw;
     }
   }
 
   function withdraw() {
     require(isClosed());
 
-    if (total < threshold && balances[msg.sender] > 0) {
+    if (!thresholdMet() && balances[msg.sender] > 0) {
       // if the pool threshold was not met, allow msg.sender to recover funds
+      ContributorWithdraw(msg.sender, balances[msg.sender]);
       msg.sender.transfer(balances[msg.sender]);
+    } else {
+      throw;
     }
   }
 
